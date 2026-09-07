@@ -58,7 +58,7 @@ Root My Pixel lets you *temporarily* gain root access with ReSukiSU in just one 
 | **Pixel 6**           | `oriole`   | `CP2A.260705.006` | `android14-6.1` | ✅      |
 | **Pixel 6 Pro**       | `raven`    | `CP2A.260705.006` | `android14-6.1` | ✅      |
 | **Pixel Fold**        | `felix`    | `CP2A.260605.012`<br>`CP2A.260705.006` | `android14-6.1` | ✅      |
-| **Pixel Tablet**      | `tangorpro`| `BP1A.250405.007` | `android14-6.1` | ✅      |
+| **Pixel Tablet**      | `tangorpro`| `BP1A.250405.007`<br>`CP2A.260705.006` | `android14-6.1` | ✅      |
 
 ---
 
