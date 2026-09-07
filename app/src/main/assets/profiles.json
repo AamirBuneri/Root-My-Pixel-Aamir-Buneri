@@ -183,6 +183,7 @@
       "buildDisplay": "CP2A.260705.006",
       "exploitAsset": "exploits/tangorpro-CP2A.260705.006.so",
       "kmi": "android14-6.1"
+    },
     {
       "profileId": "felix-CP2A.260605.012",
       "codename": "felix",
