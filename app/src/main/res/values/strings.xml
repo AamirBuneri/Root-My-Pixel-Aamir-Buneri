@@ -28,6 +28,7 @@
     <string name="action_cancel">Cancel</string>
     <string name="unroot_dialog_title">Remove root?</string>
     <string name="unroot_dialog_message">This will remove all temporary exploit files, delete KernelSU data (/data/adb), and reboot your device to fully restore stock kernel state.</string>
+    <string name="unroot_root_access_required">Grant root access to Root My Pixel in ReSukiSU Manager, or rerun the installation to restore its temporary root shell.</string>
     <string name="status_unrooting">Cleaning up and rebooting…</string>
     <string name="status_unroot_incomplete">Cleanup incomplete — waiting for your decision</string>
     <string name="unroot_incomplete_title">Some items were not removed</string>
@@ -93,6 +94,7 @@
     <string name="error_exploit_timeout">Exploit timed out</string>
     <string name="error_payload_exit">Exploit exited with code %1$d%2$s</string>
     <string name="error_success_marker">Exploit did not report success</string>
+    <string name="error_route_disabled">This payload version does not safely support the device\'s kernel 5.10. No kernel attempt was performed, and retrying the same payload will not change the result.</string>
     <string name="error_ksu_stage">Failed to stage ksud: %1$s</string>
     <string name="error_ksu_verify">ReSukiSU verification failed after late-load (exit %1$d): %2$s</string>
     <string name="error_shizuku_required">Shizuku is required. Install Shizuku from Google Play and grant permissions to Root My Pixel.</string>

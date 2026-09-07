@@ -300,7 +300,7 @@ private fun MainScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    enabled = !state.busy,
+                    enabled = !state.busy && state.canUnrootCurrentSession,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
@@ -309,6 +309,14 @@ private fun MainScreen(
                     Icon(Icons.Rounded.DeleteForever, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = stringResource(R.string.action_unroot))
+                }
+                if (!state.canUnrootCurrentSession) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.unroot_root_access_required),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             } else {
                 Button(
@@ -485,7 +493,7 @@ private fun ReSukiSuManagerCard(installed: Boolean, context: android.content.Con
             OutlinedButton(
                 onClick = {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = "https://github.com/ReSukiSU/ReSukiSU/releases".toUri()
+                        data = "https://github.com/ReSukiSU/ReSukiSU/actions/runs/31654472450".toUri()
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)

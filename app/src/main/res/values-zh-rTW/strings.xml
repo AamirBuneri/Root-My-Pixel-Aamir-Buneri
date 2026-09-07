@@ -28,6 +28,7 @@
     <string name="action_cancel">取消</string>
     <string name="unroot_dialog_title">確定要清除 Root 嗎？</string>
     <string name="unroot_dialog_message">這將會刪除所有臨時漏洞利用檔案、KernelSU 資料 (/data/adb)，並重新啟動裝置以完全恢復原生核心狀態。</string>
+    <string name="unroot_root_access_required">請在 ReSukiSU Manager 中授予 Root My Pixel root 權限，或重新執行安裝以恢復臨時 root shell。</string>
     <string name="status_unrooting">正在清理並重開機…</string>
     <string name="status_unroot_incomplete">清理未完成 — 正在等候你的決定</string>
     <string name="unroot_incomplete_title">部分項目未能移除</string>
@@ -93,6 +94,7 @@
     <string name="error_exploit_timeout">漏洞利用程式逾時</string>
     <string name="error_payload_exit">漏洞利用程式已結束，結束代碼：%1$d%2$s</string>
     <string name="error_success_marker">漏洞利用程式未回報成功</string>
+    <string name="error_route_disabled">此版本的 payload 尚未安全支援裝置的 kernel 5.10。未執行任何核心嘗試，重試相同的 payload 也不會改變結果。</string>
     <string name="error_ksu_stage">無法準備 ksud: %1$s</string>
     <string name="error_ksu_verify">ReSukiSU 在 late-load 後驗證失敗（結束代碼 %1$d）：%2$s</string>
     <string name="error_shizuku_required">需要 Shizuku。請從 Google Play 安裝 Shizuku，並授予 Root My Pixel 所需權限。</string>

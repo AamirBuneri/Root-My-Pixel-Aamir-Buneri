@@ -105,6 +105,11 @@ class InstallActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        installViewModel.refreshUnrootAvailability()
+    }
+
     companion object {
         const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_PERMISSIVE_ONLY = "permissive_only"
@@ -251,11 +256,13 @@ private fun InstallScreen(
                         ) {
                             Text(stringResource(R.string.action_close))
                         }
-                        Button(
-                            onClick = onRetry,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.action_retry))
+                        if (installState.retryAllowed) {
+                            Button(
+                                onClick = onRetry,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(stringResource(R.string.action_retry))
+                            }
                         }
                     }
 
@@ -284,6 +291,29 @@ private fun InstallScreen(
                                     )
                                     Text(stringResource(R.string.action_unroot))
                                 }
+                            } else {
+                                Button(
+                                    onClick = {},
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = false,
+                                    colors = ButtonDefaults.buttonColors(
+                                        disabledContainerColor =
+                                            MaterialTheme.colorScheme.errorContainer,
+                                        disabledContentColor =
+                                            MaterialTheme.colorScheme.onErrorContainer,
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteForever,
+                                        contentDescription = null,
+                                    )
+                                    Text(stringResource(R.string.action_unroot))
+                                }
+                                Text(
+                                    text = stringResource(R.string.unroot_root_access_required),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

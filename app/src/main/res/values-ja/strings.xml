@@ -38,6 +38,7 @@
     <string name="action_cancel">キャンセル</string>
     <string name="unroot_dialog_title">root 権限を削除しますか？</string>
     <string name="unroot_dialog_message">一時 exploit ファイル、KernelSU のデータ (/data/adb) を削除し、端末を再起動して純正カーネル状態に戻します。</string>
+    <string name="unroot_root_access_required">ReSukiSU Manager で Root My Pixel に root 権限を許可するか、インストールを再実行して一時 root シェルを復元してください。</string>
     <string name="status_unrooting">クリーンアップと再起動中…</string>
     <string name="status_unroot_incomplete">クリーンアップ未完了 — 操作を選択してください</string>
     <string name="unroot_incomplete_title">削除できなかった項目があります</string>
@@ -103,6 +104,7 @@
     <string name="error_exploit_timeout">exploit がタイムアウトしました</string>
     <string name="error_payload_exit">exploit が終了コード %1$d で終了しました%2$s</string>
     <string name="error_success_marker">exploit が成功を報告しませんでした</string>
+    <string name="error_route_disabled">このバージョンのペイロードは端末の kernel 5.10 を安全にサポートしていません。カーネルへの試行は実行されておらず、同じペイロードを再試行しても結果は変わりません。</string>
     <string name="error_ksu_stage">ksud の配置に失敗しました: %1$s</string>
     <string name="error_ksu_verify">late-load 後の ReSukiSU 検証に失敗しました (終了コード %1$d): %2$s</string>
     <string name="error_shizuku_required">Shizuku が必要です。Google Play から Shizuku をインストールし、Root My Pixel に権限を許可してください。</string>

@@ -38,6 +38,10 @@ Root My Pixel lets you *temporarily* gain root access with ReSukiSU in just one 
 
 | Device                | Codename   | Supported Builds   | Kernel KMI      | Tested |
 |:----------------------|:-----------|:------------------|:----------------|:--------|
+| **Pixel 11**          | `cubs`     | `CD1A.260618.001.C2` | `android16-6.12`| ✅      |
+| **Pixel 11 Pro**      | `grizzly`  | `CD1A.260618.001.C2` | `android16-6.12`| ✅      |
+| **Pixel 11 Pro XL**   | `kodiak`   | `CD1A.260618.001.C2` | `android16-6.12`| ✅      |
+| **Pixel 11 Pro Fold** | `yogi`     | `CD1A.260618.001.C3` | `android16-6.12`| ✅      |
 | **Pixel 10**          | `frankel`  | `CP2A.260705.006` | `android15-6.6` | ✅      |
 | **Pixel 10 Pro**      | `blazer`   | `CP2A.260705.006` | `android15-6.6` | ✅      |
 | **Pixel 10 Pro XL**   | `mustang`  | `CP2A.260705.006`<br>`CP2A.260805.005` | `android15-6.6` | ✅      |
@@ -58,7 +62,7 @@ Root My Pixel lets you *temporarily* gain root access with ReSukiSU in just one 
 | **Pixel 6**           | `oriole`   | `CP2A.260705.006` | `android14-6.1` | ✅      |
 | **Pixel 6 Pro**       | `raven`    | `CP2A.260705.006` | `android14-6.1` | ✅      |
 | **Pixel Fold**        | `felix`    | `CP2A.260605.012`<br>`CP2A.260705.006` | `android14-6.1` | ✅      |
-| **Pixel Tablet**      | `tangorpro`| `BP1A.250405.007` | `android14-6.1` | ✅      |
+| **Pixel Tablet**      | `tangorpro`| `BP1A.250405.007`<br>`CP2A.260705.006` | `android14-6.1` | ✅      |
 
 ---
 
