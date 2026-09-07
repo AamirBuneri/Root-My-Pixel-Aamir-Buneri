@@ -25,6 +25,7 @@ import com.alex193a.rootmypixel.shizuku.ExploitService
 import com.alex193a.rootmypixel.shizuku.IExploitService
 import com.alex193a.rootmypixel.utils.KernelSuInstallChecks
 import com.alex193a.rootmypixel.utils.NativeProbe
+import com.alex193a.rootmypixel.utils.RootShellProbe
 import com.alex193a.rootmypixel.utils.UnrootCommandOutcome
 import com.alex193a.rootmypixel.utils.UnrootIssue
 import kotlinx.coroutines.CancellationException
@@ -60,6 +61,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
     private val mutableTargetCatalog = MutableStateFlow(TargetCatalogUiState())
     private var discoveryJob: Job? = null
     private var installJob: Job? = null
+    private var unrootCapabilityJob: Job? = null
 
     val state: StateFlow<InstallUiState> = mutableState.asStateFlow()
     val targetCatalog: StateFlow<TargetCatalogUiState> = mutableTargetCatalog.asStateFlow()
@@ -75,12 +77,26 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val probe = NativeProbe.run()
                 val deviceInfo = NativeProbe.readDeviceSnapshot()
-                if (NativeProbe.isKernelSuActive()) {
+                val kernelSuStatus = NativeProbe.kernelSuStatus()
+                if (kernelSuStatus.isActive) {
+                    val rootTransport = findAvailableRootTransport()
                     mutableState.value = InstallUiState(
                         phase = InstallPhase.Installed,
                         message = app.getString(R.string.status_ksu_active),
                         probeOutput = probe,
-                        log = probe,
+                        log = buildString {
+                            appendLine(probe)
+                            appendLine(
+                                "KernelSU UAPI root-profile grant for this app: " +
+                                        kernelSuStatus.appRootGranted,
+                            )
+                            append(
+                                rootTransport?.let {
+                                    "[+] Unroot root transport verified: ${it.label}"
+                                } ?: "[!] No usable root transport for Unroot",
+                            )
+                        },
+                        canUnrootCurrentSession = rootTransport != null,
                     )
                     return@launch
                 }
@@ -203,21 +219,30 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 if (permissiveOnly) {
                     setPhase(InstallPhase.Installed, "SELinux permissive + root shell ready")
                     appendLog("Install complete — permissive mode, KernelSU skipped")
+                    val rootTransport = findAvailableRootTransport()
+                    mutableState.value = mutableState.value.copy(
+                        canUnrootCurrentSession = rootTransport != null,
+                    )
+                    appendLog(
+                        rootTransport?.let {
+                            "[+] Unroot root transport verified: ${it.label}"
+                        } ?: "[!] Current-install root shell is unavailable",
+                    )
                 } else {
                     setPhase(InstallPhase.LoadingKernelSu, app.getString(R.string.status_loading_ksu))
                     installKernelSu(payloads)
 
                     setPhase(InstallPhase.Installed, app.getString(R.string.status_ksu_active))
                     appendLog(app.getString(R.string.log_install_complete))
-                    val cveRootAvailable = hasCveRootTransport()
+                    val rootTransport = findAvailableRootTransport()
                     mutableState.value = mutableState.value.copy(
-                        canUnrootCurrentSession = cveRootAvailable,
+                        canUnrootCurrentSession = rootTransport != null,
                     )
                     appendLog(
-                        if (cveRootAvailable) {
-                            "[+] Current-session CVE root transport verified; Unroot is available"
+                        if (rootTransport != null) {
+                            "[+] Unroot root transport verified: ${rootTransport.label}"
                         } else {
-                            "[!] Current-session CVE root transport is unavailable; use the main Unroot flow"
+                            "[!] No usable root transport for Unroot; grant this app root in ReSukiSU Manager"
                         },
                     )
                 }
@@ -235,6 +260,12 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         val service: IExploitService,
         val conn: ServiceConnection,
     )
+
+    private enum class RootTransport(val label: String) {
+        AppSu("ReSukiSU app su"),
+        AppCveHelper("current-install CVE helper"),
+        ShizukuCveSu("current-install CVE su via Shizuku"),
+    }
 
     private fun bindExploitService(): ShizukuServiceHandle? {
         val args = Shizuku.UserServiceArgs(
@@ -627,14 +658,63 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         return CommandResult(1, "runHelper: exhausted retries")
     }
 
-    private fun hasCveRootTransport(): Boolean {
-        val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
-        if (!helper.exists()) return false
+    fun refreshUnrootAvailability() {
+        if (installJob?.isActive == true ||
+            mutableState.value.phase != InstallPhase.Installed ||
+            unrootCapabilityJob?.isActive == true
+        ) return
 
-        return runCatching {
-            val result = runHelper(helper, "-c", "id -u")
-            result.code == 0 && result.output.trim() == "0"
-        }.getOrDefault(false)
+        unrootCapabilityJob = viewModelScope.launch(Dispatchers.IO) {
+            val rootTransport = findAvailableRootTransport()
+            mutableState.value = mutableState.value.copy(
+                canUnrootCurrentSession = rootTransport != null,
+            )
+            appendLog(
+                rootTransport?.let {
+                    "[+] Unroot root transport verified: ${it.label}"
+                }
+                    ?: "[!] No usable root transport for Unroot; grant this app root in ReSukiSU Manager",
+            )
+        }
+    }
+
+    private fun findAvailableRootTransport(): RootTransport? {
+        val suResult = runCatching {
+            runCommand(listOf("su", "-c", ROOT_ID_COMMAND), ROOT_PROBE_TIMEOUT_SECONDS)
+        }.getOrNull()
+        if (suResult != null && RootShellProbe.isRoot(suResult.code, suResult.output)) {
+            return RootTransport.AppSu
+        }
+
+        val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
+        if (helper.exists()) {
+            val helperResult = runCatching {
+                runCommand(
+                    listOf(helper.absolutePath, "-c", ROOT_ID_COMMAND),
+                    ROOT_PROBE_TIMEOUT_SECONDS,
+                )
+            }.getOrNull()
+            if (helperResult != null &&
+                RootShellProbe.isRoot(helperResult.code, helperResult.output)
+            ) {
+                return RootTransport.AppCveHelper
+            }
+        }
+
+        if (!File(SHIZUKU_CVE_SU).exists() ||
+            !File(SHIZUKU_CVE_SOCKET).exists() ||
+            !hasShizukuPermission()
+        ) return null
+
+        val handle = runCatching { bindExploitService() }.getOrNull() ?: return null
+        return try {
+            val output = handle.service.exec("$SHIZUKU_CVE_SU -c '$ROOT_ID_COMMAND'")
+            if (RootShellProbe.isRoot(0, output)) RootTransport.ShizukuCveSu else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            unbindExploitService(handle)
+        }
     }
 
     fun unrootCurrentSession() {
@@ -648,14 +728,15 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 message = app.getString(R.string.status_unrooting),
                 canUnrootCurrentSession = false,
             )
-            appendLog("[*] Verifying current-session CVE root transport...")
+            appendLog("[*] Verifying an Unroot root transport...")
 
-            val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
-            if (!hasCveRootTransport()) {
-                appendLog("[-] CVE root transport is no longer available")
+            val rootTransport = findAvailableRootTransport()
+            if (rootTransport == null) {
+                appendLog("[-] Neither the app su grant nor the current CVE root shell is available")
                 showUnrootWarning(UnrootIssue.affectedByMissingTransport, canRetry = false)
                 return@launch
             }
+            appendLog("[+] Using ${rootTransport.label}")
 
             val command = runCatching {
                 app.assets.open("unroot.sh").bufferedReader().use { it.readText() }
@@ -663,13 +744,11 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
                 showUnrootWarning(listOf(UnrootIssue.Unknown))
                 return@launch
             }
-            appendLog("[*] Removing root state through the current CVE session...")
-            val result = runHelper(helper, "-c", command)
-            val outcome = UnrootCommandOutcome.parse(result.output)
+            appendLog("[*] Removing privileged root state...")
+            val outcome = executeUnrootScript(command)
             if (outcome.cleanupComplete && outcome.rebootRequested) {
                 appendLog("[+] Cleanup complete; reboot requested")
             } else {
-                appendLog("[!] Unroot output (exit=${result.code}):\n${result.output.ifBlank { "no output" }}")
                 val issues = outcome.issues.toMutableList()
                 if (outcome.cleanupComplete && !outcome.rebootRequested) {
                     issues += UnrootIssue.Reboot
@@ -690,27 +769,7 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
             )
             appendLog("[*] User requested reboot despite incomplete cleanup")
 
-            val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
-            val helperOutput = if (helper.exists()) {
-                runCatching { runHelper(helper, "-c", REBOOT_COMMAND).output }.getOrDefault("")
-            } else {
-                ""
-            }
-            if (helperOutput.contains("UNROOT_REBOOT_REQUESTED")) return@launch
-
-            val handle = runCatching { bindExploitService() }.getOrNull()
-            val shizukuOutput = if (handle != null) {
-                try {
-                    handle.service.exec(REBOOT_COMMAND)
-                } catch (_: Exception) {
-                    ""
-                } finally {
-                    unbindExploitService(handle)
-                }
-            } else {
-                ""
-            }
-            if (!shizukuOutput.contains("UNROOT_REBOOT_REQUESTED")) {
+            if (!requestReboot()) {
                 showUnrootWarning(listOf(UnrootIssue.Reboot))
             }
         }
@@ -739,8 +798,110 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         mutableState.value = mutableState.value.copy(
             phase = InstallPhase.Installed,
             message = app.getString(R.string.status_unroot_incomplete),
-            canUnrootCurrentSession = canRetry ?: hasCveRootTransport(),
+            canUnrootCurrentSession = canRetry ?: (findAvailableRootTransport() != null),
             unrootWarning = UnrootWarningUi(outcome.failedItemsText(app)),
+        )
+    }
+
+    private fun executeUnrootScript(script: String): UnrootCommandOutcome {
+        fun parseAttempt(transport: String, result: CommandResult): UnrootCommandOutcome? {
+            val outcome = UnrootCommandOutcome.parse(result.output)
+            appendLog(
+                "[*] $transport output (exit=${result.code}):\n" +
+                        result.output.ifBlank { "no output" },
+            )
+            return if (outcome.cleanupComplete ||
+                (outcome.hasStructuredOutput && !outcome.transportUnavailable)
+            ) outcome else null
+        }
+
+        runCatching { runCommand(listOf("su", "-c", script)) }
+            .getOrNull()
+            ?.let { parseAttempt("ReSukiSU app su", it) }
+            ?.let { return it }
+
+        val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
+        if (helper.exists()) {
+            runCatching { runCommand(listOf(helper.absolutePath, "-c", script)) }
+                .getOrNull()
+                ?.let { parseAttempt("current-install CVE helper", it) }
+                ?.let { return it }
+        }
+
+        if (hasShizukuPermission() &&
+            File(SHIZUKU_CVE_SU).exists() &&
+            File(SHIZUKU_CVE_SOCKET).exists()
+        ) {
+            val handle = runCatching { bindExploitService() }.getOrNull()
+            if (handle != null) {
+                try {
+                    val output = handle.service.exec(
+                        "$SHIZUKU_CVE_SU -c ${shellQuote(script)}",
+                    )
+                    parseAttempt("current-install CVE su via Shizuku", CommandResult(0, output))
+                        ?.let { return it }
+                } catch (error: Exception) {
+                    appendLog("[-] Shizuku CVE unroot error: ${error.message}")
+                } finally {
+                    unbindExploitService(handle)
+                }
+            }
+        }
+
+        return UnrootCommandOutcome(
+            cleanupComplete = false,
+            rebootRequested = false,
+            transportUnavailable = true,
+            issues = UnrootIssue.affectedByMissingTransport,
+            hasStructuredOutput = true,
+        )
+    }
+
+    private fun requestReboot(): Boolean {
+        val helper = File(app.applicationInfo.nativeLibraryDir, "libcve43499root.so")
+        val commands = buildList {
+            add(listOf("su", "-c", REBOOT_COMMAND))
+            if (helper.exists()) add(listOf(helper.absolutePath, "-c", REBOOT_COMMAND))
+        }
+        commands.forEach { command ->
+            val output = runCatching { runCommand(command).output }.getOrDefault("")
+            appendLog("[*] Reboot attempt: ${output.ifBlank { "no output" }}")
+            if (output.contains("UNROOT_REBOOT_REQUESTED")) return true
+        }
+
+        if (!hasShizukuPermission() ||
+            !File(SHIZUKU_CVE_SU).exists() ||
+            !File(SHIZUKU_CVE_SOCKET).exists()
+        ) return false
+
+        val handle = runCatching { bindExploitService() }.getOrNull() ?: return false
+        return try {
+            val output = handle.service.exec(
+                "$SHIZUKU_CVE_SU -c ${shellQuote(REBOOT_COMMAND)}",
+            )
+            appendLog("[*] Shizuku CVE reboot attempt: $output")
+            output.contains("UNROOT_REBOOT_REQUESTED")
+        } catch (error: Exception) {
+            appendLog("[-] Shizuku CVE reboot error: ${error.message}")
+            false
+        } finally {
+            unbindExploitService(handle)
+        }
+    }
+
+    private fun runCommand(
+        command: List<String>,
+        timeoutSeconds: Long = COMMAND_TIMEOUT_SECONDS,
+    ): CommandResult {
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            process.waitFor()
+        }
+        return CommandResult(
+            code = if (finished) process.exitValue() else COMMAND_TIMEOUT_CODE,
+            output = process.inputStream.bufferedReader().use { it.readText() }.trim(),
         )
     }
 
@@ -820,6 +981,10 @@ class InstallViewModel(application: Application) : AndroidViewModel(application)
         private const val MAX_LOG_CHARS = 5 * 1024 * 1024
         private const val COMMAND_TIMEOUT_SECONDS = 90L
         private const val COMMAND_TIMEOUT_CODE = 124
+        private const val ROOT_PROBE_TIMEOUT_SECONDS = 10L
+        private const val ROOT_ID_COMMAND = "id -u"
+        private const val SHIZUKU_CVE_SU = "/data/local/tmp/su"
+        private const val SHIZUKU_CVE_SOCKET = "/data/local/tmp/temp_su.sock"
         private val LOG_POLL_INTERVAL = 250.milliseconds
         private const val RESUKISU_PACKAGE = "com.resukisu.resukisu"
         private const val REBOOT_COMMAND =

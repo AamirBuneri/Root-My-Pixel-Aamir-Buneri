@@ -28,6 +28,7 @@
     <string name="action_cancel">取消</string>
     <string name="unroot_dialog_title">確定要清除 Root 嗎？</string>
     <string name="unroot_dialog_message">這將會刪除所有臨時漏洞利用檔案、KernelSU 資料 (/data/adb)，並重新啟動裝置以完全恢復原生核心狀態。</string>
+    <string name="unroot_root_access_required">請在 ReSukiSU Manager 中授予 Root My Pixel root 權限，或重新執行安裝以恢復臨時 root shell。</string>
     <string name="status_unrooting">正在清理並重開機…</string>
     <string name="status_unroot_incomplete">清理未完成 — 正在等候你的決定</string>
     <string name="unroot_incomplete_title">部分項目未能移除</string>

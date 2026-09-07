@@ -26,6 +26,7 @@
     <string name="action_cancel">Annulla</string>
     <string name="unroot_dialog_title">Rimuovere i permessi di root?</string>
     <string name="unroot_dialog_message">Questa azione eliminerà tutti i file temporanei dell\'exploit, le configurazioni di KernelSU (/data/adb) e riavvierà il dispositivo per ripristinare completamente lo stato stock.</string>
+    <string name="unroot_root_access_required">Concedi i permessi root a Root My Pixel in ReSukiSU Manager oppure ripeti l’installazione per ripristinare la shell root temporanea.</string>
     <string name="status_unrooting">Rimozione root e riavvio in corso…</string>
     <string name="status_unroot_incomplete">Pulizia incompleta — in attesa di una decisione</string>
     <string name="unroot_incomplete_title">Alcuni elementi non sono stati rimossi</string>

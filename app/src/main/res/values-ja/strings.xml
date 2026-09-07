@@ -38,6 +38,7 @@
     <string name="action_cancel">キャンセル</string>
     <string name="unroot_dialog_title">root 権限を削除しますか？</string>
     <string name="unroot_dialog_message">一時 exploit ファイル、KernelSU のデータ (/data/adb) を削除し、端末を再起動して純正カーネル状態に戻します。</string>
+    <string name="unroot_root_access_required">ReSukiSU Manager で Root My Pixel に root 権限を許可するか、インストールを再実行して一時 root シェルを復元してください。</string>
     <string name="status_unrooting">クリーンアップと再起動中…</string>
     <string name="status_unroot_incomplete">クリーンアップ未完了 — 操作を選択してください</string>
     <string name="unroot_incomplete_title">削除できなかった項目があります</string>
