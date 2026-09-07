@@ -199,6 +199,38 @@
       "buildDisplay": "AD1A.240905.004",
       "exploitAsset": "exploits/tokay-AD1A.240905.004.so",
       "kmi": "android14-6.1"
+    },
+    {
+      "profileId": "grizzly-CD1A.260618.001.C2",
+      "codename": "grizzly",
+      "kernelRelease": "6.12.69-android16-6",
+      "buildDisplay": "CD1A.260618.001.C2",
+      "exploitAsset": "exploits/grizzly-CD1A.260618.001.C2.so",
+      "kmi": "android16-6.12"
+    },
+    {
+      "profileId": "cubs-CD1A.260618.001.C2",
+      "codename": "cubs",
+      "kernelRelease": "6.12.69-android16-6",
+      "buildDisplay": "CD1A.260618.001.C2",
+      "exploitAsset": "exploits/cubs-CD1A.260618.001.C2.so",
+      "kmi": "android16-6.12"
+    },
+    {
+      "profileId": "kodiak-CD1A.260618.001.C2",
+      "codename": "kodiak",
+      "kernelRelease": "6.12.69-android16-6",
+      "buildDisplay": "CD1A.260618.001.C2",
+      "exploitAsset": "exploits/kodiak-CD1A.260618.001.C2.so",
+      "kmi": "android16-6.12"
+    },
+    {
+      "profileId": "yogi-CD1A.260618.001.C3",
+      "codename": "yogi",
+      "kernelRelease": "6.12.69-android16-6",
+      "buildDisplay": "CD1A.260618.001.C3",
+      "exploitAsset": "exploits/yogi-CD1A.260618.001.C3.so",
+      "kmi": "android16-6.12"
     }
   ]
 }
