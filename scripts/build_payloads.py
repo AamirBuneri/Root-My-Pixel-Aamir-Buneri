@@ -49,23 +49,30 @@ def find_clang():
 
 def setup_wallpaper():
     os.makedirs(f"{KSU_ROOT}/cves/assets", exist_ok=True)
+    
+    # Check both webp and png in the exploits folder
     webp_src = f"{ASSET_DIR}/wallpaper.webp"
     png_src  = f"{ASSET_DIR}/wallpaper.png"
     dst      = f"{KSU_ROOT}/cves/assets/wallpaper.webp"
 
+    print(f"Checking for wallpaper at: {webp_src}")
+    print(f"  exists: {os.path.exists(webp_src)}")
+
     if os.path.exists(webp_src):
         import shutil
         shutil.copy(webp_src, dst)
-        print("Using wallpaper.webp from repo")
+        print(f"Copied wallpaper.webp ({os.path.getsize(dst)} bytes)")
         return True
     elif os.path.exists(png_src):
         from PIL import Image
         img = Image.open(png_src).resize((921, 2048), Image.LANCZOS)
         img.save(dst, "WEBP", quality=85)
-        print(f"Converted PNG to WebP: {os.path.getsize(dst)} bytes")
+        print(f"Converted PNG to WebP ({os.path.getsize(dst)} bytes)")
         return True
     else:
-        print("No wallpaper found in repo")
+        print(f"No wallpaper found at {webp_src} or {png_src}")
+        print(f"Current directory: {os.getcwd()}")
+        print(f"ASSET_DIR contents: {os.listdir(ASSET_DIR) if os.path.exists(ASSET_DIR) else 'NOT FOUND'}")
         return False
 
 def patch_wallpaper():
