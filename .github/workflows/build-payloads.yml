@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -44,18 +46,28 @@ jobs:
       - name: Commit to repo
         run: |
           SO_COUNT=$(ls ksu_root/build/payloads/*.so 2>/dev/null | wc -l)
+          echo "Built $SO_COUNT .so files:"
+          ls -lh ksu_root/build/payloads/*.so 2>/dev/null
           if [ "$SO_COUNT" -gt 0 ]; then
-            cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
+            mkdir -p app/src/main/assets/exploits
+            cp ksu_root/build/payloads/pixel6-8-series.so app/src/main/assets/exploits/
+            cp ksu_root/build/payloads/pixel9-series.so   app/src/main/assets/exploits/
+            cp ksu_root/build/payloads/pixel8a.so         app/src/main/assets/exploits/
+            cp ksu_root/build/payloads/pixel6a-cp1a.so    app/src/main/assets/exploits/
+            cp ksu_root/build/payloads/pixel10-series.so  app/src/main/assets/exploits/
+            echo "Copied .so files to exploits folder"
+            ls -lh app/src/main/assets/exploits/*.so
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add app/src/main/assets/exploits/pixel6-8-series.so
             git add app/src/main/assets/exploits/pixel9-series.so
             git add app/src/main/assets/exploits/pixel8a.so
             git add app/src/main/assets/exploits/pixel6a-cp1a.so
             git add app/src/main/assets/exploits/pixel10-series.so
-            git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files"
-            git push
+            git status
+            git diff --staged --quiet && echo "Nothing changed" || git commit -m "Auto-build: Update payload .so files"
+            git push origin main
           else
-            echo "No .so files built"
+            echo "No .so files built - check Build step"
             exit 1
           fi
