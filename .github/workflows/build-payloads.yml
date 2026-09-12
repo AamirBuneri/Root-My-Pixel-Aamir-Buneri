@@ -1,0 +1,118 @@
+name: Build Pixel Payloads
+
+on:
+  workflow_dispatch:  # Run manually from Actions tab
+  push:
+    paths:
+      - '.github/workflows/build-payloads.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26c
+          add-to-path: true
+
+      - name: Clone pixel-ksu-root
+        run: |
+          git clone --depth=1 https://github.com/JingMatrix/pixel-ksu-root.git ksu_root
+
+      - name: Copy custom wallpaper
+        run: |
+          mkdir -p ksu_root/cves/assets
+          # Use your wallpaper from the repo if it exists
+          if [ -f "app/src/main/assets/exploits/wallpaper.webp" ]; then
+            cp app/src/main/assets/exploits/wallpaper.webp ksu_root/cves/assets/wallpaper.webp
+            echo "Using custom wallpaper from repo"
+          else
+            echo "No custom wallpaper found, using default"
+          fi
+
+      - name: Build all payloads
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cd ksu_root
+          NDK_CLANG="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
+          
+          mkdir -p build/payloads
+          
+          TARGETS=(
+            "bluejay-CP2A.260705.006:pixel6-8-series"
+            "komodo-CP2A.260705.006:pixel9-series"
+            "akita-CP2A.260805.005:pixel8a"
+            "bluejay-CP1A.260405.005:pixel6a-cp1a"
+            "blazer-CP2A.260705.006:pixel10-series"
+          )
+          
+          for entry in "${TARGETS[@]}"; do
+            TARGET="${entry%%:*}"
+            OUTNAME="${entry##*:}"
+            
+            echo "Building $OUTNAME from $TARGET..."
+            
+            # Assemble wallpaper blob if available
+            WALLPAPER_OBJ=""
+            if [ -f "cves/wallpaper_blob.S" ] && [ -f "cves/assets/wallpaper.webp" ]; then
+              aarch64-linux-android35-as cves/wallpaper_blob.S \
+                -o build/payloads/${OUTNAME}_wp.o 2>/dev/null || true
+              if [ -f "build/payloads/${OUTNAME}_wp.o" ]; then
+                WALLPAPER_OBJ="build/payloads/${OUTNAME}_wp.o"
+                echo "  Wallpaper blob included"
+              fi
+            fi
+            
+            "$NDK_CLANG" \
+              -shared -fPIC -O2 \
+              -DAPP_PAYLOAD=1 \
+              -DTARGET_CONFIG_H="<targets/$TARGET/target.h>" \
+              -DPSELECT_ROUTE_NFDS=320 \
+              -DPSELECT_MAP_FIRST_WORD=2 \
+              -DPSELECT_MAP_LOCK_WORD=9 \
+              -DKNOB_PSELECT_SHIFT_MIN=-2 \
+              -DKNOB_PSELECT_SHIFT_MAX=6 \
+              -Icves/cve-2026-43499-ghostlock/61 \
+              -Icves/cve-2026-43499-ghostlock \
+              -Icves \
+              -Icves/targets/$TARGET \
+              cves/cve-2026-43499-ghostlock/61/main.c \
+              cves/cve-2026-43499-ghostlock/61/util.c \
+              cves/kaslr/slide_tracefs.c \
+              cves/cve-2026-43499-ghostlock/61/fops.c \
+              cves/cve-2026-43499-ghostlock/61/pipe.c \
+              cves/cve-2026-43499-ghostlock/61/root.c \
+              cves/cve-2026-43499-ghostlock/61/preload.c \
+              $WALLPAPER_OBJ \
+              -o build/payloads/${OUTNAME}.so
+            
+            if [ -f "build/payloads/${OUTNAME}.so" ]; then
+              echo "  ✅ $OUTNAME.so built successfully"
+              ls -la build/payloads/${OUTNAME}.so
+            else
+              echo "  ❌ $OUTNAME.so FAILED"
+            fi
+          done
+
+      - name: Upload payloads as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixel-payloads
+          path: ksu_root/build/payloads/*.so
+          retention-days: 30
+
+      - name: Copy to exploits folder and commit
+        run: |
+          cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/ 2>/dev/null || true
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add app/src/main/assets/exploits/*.so 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files"
+          git push 2>/dev/null || echo "Nothing to push"
