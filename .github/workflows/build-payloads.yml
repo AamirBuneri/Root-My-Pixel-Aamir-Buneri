@@ -28,15 +28,103 @@ jobs:
       - name: Copy custom wallpaper
         run: |
           mkdir -p ksu_root/cves/assets
-          # Use your wallpaper from the repo if it exists
+          # Convert and use wallpaper from repo
           if [ -f "app/src/main/assets/exploits/wallpaper.webp" ]; then
             cp app/src/main/assets/exploits/wallpaper.webp ksu_root/cves/assets/wallpaper.webp
-            echo "Using custom wallpaper from repo"
+            echo "✅ Using custom wallpaper from repo"
+          elif [ -f "app/src/main/assets/exploits/wallpaper.png" ]; then
+            pip install Pillow -q
+            python3 -c "
+from PIL import Image
+img = Image.open('app/src/main/assets/exploits/wallpaper.png')
+img = img.resize((921, 2048), Image.LANCZOS)
+img.save('ksu_root/cves/assets/wallpaper.webp', 'WEBP', quality=85)
+print('Converted PNG to WebP')
+"
           else
-            echo "No custom wallpaper found, using default"
+            echo "⚠️ No wallpaper found — using default (no wallpaper)"
           fi
 
-      - name: Build all payloads
+      - name: Create wallpaper blob assembler
+        run: |
+          # Create wallpaper_blob.S if wallpaper exists
+          if [ -f "ksu_root/cves/assets/wallpaper.webp" ]; then
+            cat > ksu_root/cves/wallpaper_blob.S << 'ASMEOF'
+.section .rodata
+.global embedded_wallpaper_start
+.global embedded_wallpaper_end
+.balign 16
+embedded_wallpaper_start:
+.incbin "assets/wallpaper.webp"
+embedded_wallpaper_end:
+.balign 16
+ASMEOF
+            echo "✅ wallpaper_blob.S created"
+          fi
+
+          # Create real install_embedded_wallpaper in preload.c patch
+          if [ -f "ksu_root/cves/assets/wallpaper.webp" ]; then
+            # Patch the weak stub in preload.c with real implementation
+            python3 - << 'PYEOF'
+import os
+src_path = 'ksu_root/cves/cve-2026-43499-ghostlock/61/preload.c'
+src = open(src_path).read()
+
+wallpaper_impl = """
+#define WALLPAPER_PRIMARY  "/sdcard/wallpaper.webp"
+#define WALLPAPER_DATA     "/data/system/users/0/wallpaper"
+#define WALLPAPER_ORIG     "/data/system/users/0/wallpaper_orig"
+
+extern const unsigned char embedded_wallpaper_start[];
+extern const unsigned char embedded_wallpaper_end[];
+
+static int _write_full(int fd, const void *buf, size_t count) {
+  const unsigned char *p = (const unsigned char *)buf;
+  while (count > 0) {
+    ssize_t n = write(fd, p, count);
+    if (n < 0) { if (errno == EINTR) continue; return 0; }
+    p += n; count -= n;
+  }
+  return 1;
+}
+
+static int _write_wp_file(const char *path, mode_t mode) {
+  size_t size = (size_t)(embedded_wallpaper_end - embedded_wallpaper_start);
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+  if (fd < 0) return 0;
+  int ok = _write_full(fd, embedded_wallpaper_start, size);
+  close(fd);
+  return ok;
+}
+
+int install_embedded_wallpaper(void) {
+  _write_wp_file(WALLPAPER_PRIMARY, 0644);
+  int ok = _write_wp_file(WALLPAPER_DATA, 0600) &&
+           _write_wp_file(WALLPAPER_ORIG, 0600);
+  if (ok) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      execl("/system/bin/restorecon", "restorecon",
+            WALLPAPER_DATA, WALLPAPER_ORIG, (char*)NULL);
+      _exit(1);
+    }
+    if (pid > 0) waitpid(pid, NULL, 0);
+  }
+  return ok;
+}
+"""
+
+stub = '__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}'
+if stub in src:
+    src = src.replace(stub, wallpaper_impl)
+    if '#include <sys/wait.h>' not in src:
+        src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/wait.h>', 1)
+    open(src_path, 'w').write(src)
+    print('✅ Wallpaper implementation patched into preload.c')
+else:
+    print('⚠️ Stub not found - wallpaper may already be patched')
+PYEOF
+          fi
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -83,11 +171,18 @@ jobs:
             # Assemble wallpaper blob if available
             WALLPAPER_OBJ=""
             if [ -f "cves/wallpaper_blob.S" ] && [ -f "cves/assets/wallpaper.webp" ]; then
-              aarch64-linux-android35-as cves/wallpaper_blob.S \
+              cd cves && "$NDK_BIN/aarch64-linux-android-as" wallpaper_blob.S \
+                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null || \
+              "$NDK_BIN/llvm-as" wallpaper_blob.S \
+                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null || true
+              cd ..
+              # Use GNU as from NDK
+              "$NDK_BIN/llvm-mc" --triple=aarch64-linux-android \
+                --filetype=obj cves/wallpaper_blob.S \
                 -o build/payloads/${OUTNAME}_wp.o 2>/dev/null || true
               if [ -f "build/payloads/${OUTNAME}_wp.o" ]; then
                 WALLPAPER_OBJ="build/payloads/${OUTNAME}_wp.o"
-                echo "  Wallpaper blob included"
+                echo "  ✅ Wallpaper blob assembled"
               fi
             fi
             
