@@ -127,31 +127,59 @@ int install_embedded_wallpaper(void) {
   return ok;
 }
 """
-    stub = "__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}"
-    if stub in src:
-        src = src.replace(stub, impl)
+    # Try multiple stub formats from different repo versions
+    stubs = [
+        "__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}",
+        "__attribute__((weak)) int install_embedded_wallpaper(void) { errno = ENOSYS; return 0; }",
+        "int install_embedded_wallpaper(void)",
+    ]
+    patched = False
+    for stub in stubs:
+        if stub in src:
+            src = src.replace(stub, impl, 1)
+            patched = True
+            break
+
+    if patched:
         if "#include <sys/wait.h>" not in src:
             src = src.replace("#include <sys/stat.h>",
                               "#include <sys/stat.h>\n#include <sys/wait.h>", 1)
         open(preload_path, "w").write(src)
         print("Wallpaper implementation patched into preload.c")
     else:
-        print("WARNING: stub not found in preload.c")
+        # If stub not found, append the implementation at the end
+        src += "\n" + impl
+        if "#include <sys/wait.h>" not in src:
+            src = src.replace("#include <sys/stat.h>",
+                              "#include <sys/stat.h>\n#include <sys/wait.h>", 1)
+        open(preload_path, "w").write(src)
+        print("Wallpaper implementation appended to preload.c")
 
-def assemble_wallpaper_blob(ndk_bin):
+def assemble_wallpaper_blob(ndk_bin, clang):
+    blob_s = f"{KSU_ROOT}/cves/wallpaper_blob.S"
+    blob_o = f"{BUILD_DIR}/wallpaper.o"
+
+    # Try llvm-mc first, then fall back to clang -c
     llvm_mc = os.path.join(ndk_bin, "llvm-mc")
-    blob_s  = f"{KSU_ROOT}/cves/wallpaper_blob.S"
-    blob_o  = f"{BUILD_DIR}/wallpaper.o"
-    result = subprocess.run(
-        [llvm_mc, "--triple=aarch64-linux-android",
-         "--filetype=obj", blob_s, "-o", blob_o],
-        cwd=f"{KSU_ROOT}/cves",
-        capture_output=True
-    )
+    if os.path.isfile(llvm_mc):
+        result = subprocess.run(
+            [llvm_mc, "--triple=aarch64-linux-android",
+             "--filetype=obj", blob_s, "-o", blob_o],
+            cwd=f"{KSU_ROOT}/cves",
+            capture_output=True
+        )
+    else:
+        # Fallback: use clang to assemble
+        result = subprocess.run(
+            [clang, "-c", blob_s, "-o", blob_o],
+            cwd=f"{KSU_ROOT}/cves",
+            capture_output=True
+        )
+
     if result.returncode == 0 and os.path.exists(blob_o):
         print(f"Wallpaper blob assembled: {os.path.getsize(blob_o)} bytes")
         return blob_o
-    print(f"Wallpaper blob assembly failed: {result.stderr.decode()}")
+    print(f"Wallpaper blob assembly failed: {result.stderr.decode()[:200]}")
     return None
 
 def build_payload(clang, out_name, target, wp_obj=None):
@@ -199,7 +227,7 @@ def main():
     wp_obj = None
     if has_wallpaper:
         patch_wallpaper()
-        wp_obj = assemble_wallpaper_blob(ndk_bin)
+        wp_obj = assemble_wallpaper_blob(ndk_bin, clang)
 
     results = []
     for out_name, target in PAYLOADS:
