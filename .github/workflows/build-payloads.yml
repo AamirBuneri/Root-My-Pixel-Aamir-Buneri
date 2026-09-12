@@ -5,11 +5,13 @@ on:
   push:
     paths:
       - '.github/workflows/build-payloads.yml'
+      - 'app/src/main/assets/exploits/wallpaper.png'
+      - 'app/src/main/assets/exploits/wallpaper.webp'
+      - 'scripts/build_payloads.py'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -24,177 +26,13 @@ jobs:
       - name: Clone pixel-ksu-root
         run: git clone --depth=1 https://github.com/JingMatrix/pixel-ksu-root.git ksu_root
 
-      - name: Setup wallpaper
-        run: |
-          mkdir -p ksu_root/cves/assets
-          if [ -f "app/src/main/assets/exploits/wallpaper.webp" ]; then
-            cp app/src/main/assets/exploits/wallpaper.webp ksu_root/cves/assets/wallpaper.webp
-            echo "Using wallpaper.webp from repo"
-          elif [ -f "app/src/main/assets/exploits/wallpaper.png" ]; then
-            pip install Pillow -q
-            python3 convert_wallpaper.py
-          else
-            echo "No wallpaper found"
-          fi
+      - name: Install dependencies
+        run: pip install Pillow -q
 
-      - name: Write helper scripts
-        run: |
-          cat > convert_wallpaper.py << 'EOF'
-          from PIL import Image
-          img = Image.open('app/src/main/assets/exploits/wallpaper.png')
-          img = img.resize((921, 2048), Image.LANCZOS)
-          img.save('ksu_root/cves/assets/wallpaper.webp', 'WEBP', quality=85)
-          print('Converted PNG to WebP')
-          EOF
-
-          cat > patch_wallpaper.py << 'EOF'
-          src_path = 'ksu_root/cves/cve-2026-43499-ghostlock/61/preload.c'
-          src = open(src_path).read()
-          impl = r"""
-          #define WALLPAPER_PRIMARY "/sdcard/wallpaper.webp"
-          #define WALLPAPER_DATA "/data/system/users/0/wallpaper"
-          #define WALLPAPER_ORIG "/data/system/users/0/wallpaper_orig"
-          extern const unsigned char embedded_wallpaper_start[];
-          extern const unsigned char embedded_wallpaper_end[];
-          static int wp_write_full(int fd,const void*buf,size_t n){
-            const unsigned char*p=buf;
-            while(n>0){ssize_t r=write(fd,p,n);if(r<0){if(errno==EINTR)continue;return 0;}p+=r;n-=r;}
-            return 1;
-          }
-          static int wp_write_file(const char*path,mode_t m){
-            size_t sz=(size_t)(embedded_wallpaper_end-embedded_wallpaper_start);
-            int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,m);
-            if(fd<0)return 0;
-            int ok=wp_write_full(fd,embedded_wallpaper_start,sz);
-            close(fd);return ok;
-          }
-          int install_embedded_wallpaper(void){
-            wp_write_file(WALLPAPER_PRIMARY,0644);
-            int ok=wp_write_file(WALLPAPER_DATA,0600)&&wp_write_file(WALLPAPER_ORIG,0600);
-            if(ok){pid_t p=fork();if(p==0){execl("/system/bin/restorecon","restorecon",WALLPAPER_DATA,WALLPAPER_ORIG,(char*)NULL);_exit(1);}if(p>0)waitpid(p,NULL,0);}
-            return ok;
-          }
-          """
-          stub = '__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}'
-          if stub in src:
-              src = src.replace(stub, impl)
-              if '#include <sys/wait.h>' not in src:
-                  src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/wait.h>', 1)
-              open(src_path, 'w').write(src)
-              print('Wallpaper patched')
-          else:
-              print('Stub not found')
-          EOF
-
-      - name: Patch wallpaper into source
-        run: |
-          if [ -f "ksu_root/cves/assets/wallpaper.webp" ]; then
-            python3 patch_wallpaper.py
-            cat > ksu_root/cves/wallpaper_blob.S << 'EOF'
-          .section .rodata
-          .global embedded_wallpaper_start
-          .global embedded_wallpaper_end
-          .balign 16
-          embedded_wallpaper_start:
-          .incbin "assets/wallpaper.webp"
-          embedded_wallpaper_end:
-          .balign 16
-          EOF
-            echo "wallpaper_blob.S created"
-          fi
-
-      - name: Build all payloads
+      - name: Run build script
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          cd ksu_root
-          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "Available aarch64 clang binaries:"
-          ls $NDK_BIN | grep "aarch64.*clang" | head -10
-
-          NDK_CLANG=""
-          for api in 35 34 33 32 31; do
-            if [ -f "$NDK_BIN/aarch64-linux-android${api}-clang" ]; then
-              NDK_CLANG="$NDK_BIN/aarch64-linux-android${api}-clang"
-              echo "Using: $NDK_CLANG"
-              break
-            fi
-          done
-
-          if [ -z "$NDK_CLANG" ]; then
-            echo "ERROR: No aarch64 clang found"
-            exit 1
-          fi
-
-          mkdir -p build/payloads
-
-          echo "=== Building pixel6-8-series ==="
-          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
-            "-DTARGET_CONFIG_H=<targets/bluejay-CP2A.260705.006/target.h>" \
-            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
-            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
-            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
-            -Icves -Icves/targets/bluejay-CP2A.260705.006 \
-            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
-            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
-            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
-            cves/cve-2026-43499-ghostlock/61/preload.c \
-            -o build/payloads/pixel6-8-series.so && echo "✅ pixel6-8-series OK" || echo "❌ FAILED"
-
-          echo "=== Building pixel9-series ==="
-          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
-            "-DTARGET_CONFIG_H=<targets/komodo-CP2A.260705.006/target.h>" \
-            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
-            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
-            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
-            -Icves -Icves/targets/komodo-CP2A.260705.006 \
-            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
-            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
-            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
-            cves/cve-2026-43499-ghostlock/61/preload.c \
-            -o build/payloads/pixel9-series.so && echo "✅ pixel9-series OK" || echo "❌ FAILED"
-
-          echo "=== Building pixel8a ==="
-          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
-            "-DTARGET_CONFIG_H=<targets/akita-CP2A.260805.005/target.h>" \
-            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
-            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
-            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
-            -Icves -Icves/targets/akita-CP2A.260805.005 \
-            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
-            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
-            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
-            cves/cve-2026-43499-ghostlock/61/preload.c \
-            -o build/payloads/pixel8a.so && echo "✅ pixel8a OK" || echo "❌ FAILED"
-
-          echo "=== Building pixel6a-cp1a ==="
-          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
-            "-DTARGET_CONFIG_H=<targets/bluejay-CP1A.260405.005/target.h>" \
-            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
-            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
-            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
-            -Icves -Icves/targets/bluejay-CP1A.260405.005 \
-            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
-            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
-            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
-            cves/cve-2026-43499-ghostlock/61/preload.c \
-            -o build/payloads/pixel6a-cp1a.so && echo "✅ pixel6a-cp1a OK" || echo "❌ FAILED"
-
-          echo "=== Building pixel10-series ==="
-          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
-            "-DTARGET_CONFIG_H=<targets/blazer-CP2A.260705.006/target.h>" \
-            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
-            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
-            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
-            -Icves -Icves/targets/blazer-CP2A.260705.006 \
-            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
-            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
-            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
-            cves/cve-2026-43499-ghostlock/61/preload.c \
-            -o build/payloads/pixel10-series.so && echo "✅ pixel10-series OK" || echo "❌ FAILED"
-
-          echo "=== Results ==="
-          ls -lh build/payloads/
+        run: python3 scripts/build_payloads.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -205,21 +43,19 @@ jobs:
 
       - name: Commit to repo
         run: |
-          # Only copy if .so files actually exist
           SO_COUNT=$(ls ksu_root/build/payloads/*.so 2>/dev/null | wc -l)
-          echo "Built $SO_COUNT .so files"
           if [ "$SO_COUNT" -gt 0 ]; then
             cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/
             git config user.name "GitHub Actions"
             git config user.email "actions@github.com"
-            git add app/src/main/assets/exploits/pixel6-8-series.so \
-                    app/src/main/assets/exploits/pixel9-series.so \
-                    app/src/main/assets/exploits/pixel8a.so \
-                    app/src/main/assets/exploits/pixel6a-cp1a.so \
-                    app/src/main/assets/exploits/pixel10-series.so 2>/dev/null || true
-            git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files v$(date +%Y%m%d)"
-            git push 2>/dev/null || echo "Nothing to push"
+            git add app/src/main/assets/exploits/pixel6-8-series.so
+            git add app/src/main/assets/exploits/pixel9-series.so
+            git add app/src/main/assets/exploits/pixel8a.so
+            git add app/src/main/assets/exploits/pixel6a-cp1a.so
+            git add app/src/main/assets/exploits/pixel10-series.so
+            git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files"
+            git push
           else
-            echo "No .so files built — skipping commit"
+            echo "No .so files built"
             exit 1
           fi
