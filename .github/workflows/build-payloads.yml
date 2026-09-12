@@ -41,7 +41,28 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           cd ksu_root
-          NDK_CLANG="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang"
+          
+          # Find the correct clang binary name in the NDK
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "NDK bin contents:"
+          ls $NDK_BIN | grep "aarch64" | head -10
+          
+          # NDK r26c uses aarch64-linux-android<API>-clang
+          # Try API 35 first, then 34, then 33
+          NDK_CLANG=""
+          for api in 35 34 33 32; do
+            if [ -f "$NDK_BIN/aarch64-linux-android${api}-clang" ]; then
+              NDK_CLANG="$NDK_BIN/aarch64-linux-android${api}-clang"
+              echo "Found clang: $NDK_CLANG"
+              break
+            fi
+          done
+          
+          if [ -z "$NDK_CLANG" ]; then
+            echo "ERROR: No aarch64 clang found in NDK"
+            ls $NDK_BIN | grep clang
+            exit 1
+          fi
           
           mkdir -p build/payloads
           
