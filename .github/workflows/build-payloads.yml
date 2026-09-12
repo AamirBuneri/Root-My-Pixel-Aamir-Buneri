@@ -129,15 +129,9 @@ jobs:
 
           mkdir -p build/payloads
 
-          declare -A TARGETS
-          TARGETS["pixel6-8-series"]="bluejay-CP2A.260705.006"
-          TARGETS["pixel9-series"]="komodo-CP2A.260705.006"
-          TARGETS["pixel8a"]="akita-CP2A.260805.005"
-          TARGETS["pixel6a-cp1a"]="bluejay-CP1A.260405.005"
-          TARGETS["pixel10-series"]="blazer-CP2A.260705.006"
-
-          for OUTNAME in "${!TARGETS[@]}"; do
-            TARGET="${TARGETS[$OUTNAME]}"
+          build_one() {
+            OUTNAME=$1
+            TARGET=$2
             echo "=== Building $OUTNAME from $TARGET ==="
 
             WALLPAPER_OBJ=""
@@ -175,7 +169,13 @@ jobs:
               -o build/payloads/${OUTNAME}.so \
               && echo "  ✅ $OUTNAME.so OK" \
               || echo "  ❌ $OUTNAME.so FAILED"
-          done
+          }
+
+          build_one pixel6-8-series  bluejay-CP2A.260705.006
+          build_one pixel9-series    komodo-CP2A.260705.006
+          build_one pixel8a          akita-CP2A.260805.005
+          build_one pixel6a-cp1a     bluejay-CP1A.260405.005
+          build_one pixel10-series   blazer-CP2A.260705.006
 
           ls -lh build/payloads/
 
@@ -188,9 +188,21 @@ jobs:
 
       - name: Commit to repo
         run: |
-          cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/ 2>/dev/null || true
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add app/src/main/assets/exploits/*.so 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files v$(date +%Y%m%d)"
-          git push 2>/dev/null || echo "Nothing to push"
+          # Only copy if .so files actually exist
+          SO_COUNT=$(ls ksu_root/build/payloads/*.so 2>/dev/null | wc -l)
+          echo "Built $SO_COUNT .so files"
+          if [ "$SO_COUNT" -gt 0 ]; then
+            cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git add app/src/main/assets/exploits/pixel6-8-series.so \
+                    app/src/main/assets/exploits/pixel9-series.so \
+                    app/src/main/assets/exploits/pixel8a.so \
+                    app/src/main/assets/exploits/pixel6a-cp1a.so \
+                    app/src/main/assets/exploits/pixel10-series.so 2>/dev/null || true
+            git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files v$(date +%Y%m%d)"
+            git push 2>/dev/null || echo "Nothing to push"
+          else
+            echo "No .so files built — skipping commit"
+            exit 1
+          fi
