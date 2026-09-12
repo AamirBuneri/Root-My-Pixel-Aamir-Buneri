@@ -123,60 +123,77 @@ jobs:
 
           if [ -z "$NDK_CLANG" ]; then
             echo "ERROR: No aarch64 clang found"
-            ls $NDK_BIN | grep clang
             exit 1
           fi
 
           mkdir -p build/payloads
 
-          build_one() {
-            OUTNAME=$1
-            TARGET=$2
-            echo "=== Building $OUTNAME from $TARGET ==="
+          echo "=== Building pixel6-8-series ==="
+          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
+            "-DTARGET_CONFIG_H=<targets/bluejay-CP2A.260705.006/target.h>" \
+            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
+            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
+            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
+            -Icves -Icves/targets/bluejay-CP2A.260705.006 \
+            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
+            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
+            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
+            cves/cve-2026-43499-ghostlock/61/preload.c \
+            -o build/payloads/pixel6-8-series.so && echo "✅ pixel6-8-series OK" || echo "❌ FAILED"
 
-            WALLPAPER_OBJ=""
-            if [ -f "cves/wallpaper_blob.S" ] && [ -f "cves/assets/wallpaper.webp" ]; then
-              (cd cves && "$NDK_BIN/llvm-mc" --triple=aarch64-linux-android \
-                --filetype=obj wallpaper_blob.S \
-                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null)
-              if [ -f "build/payloads/${OUTNAME}_wp.o" ]; then
-                WALLPAPER_OBJ="build/payloads/${OUTNAME}_wp.o"
-                echo "  Wallpaper included"
-              fi
-            fi
+          echo "=== Building pixel9-series ==="
+          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
+            "-DTARGET_CONFIG_H=<targets/komodo-CP2A.260705.006/target.h>" \
+            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
+            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
+            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
+            -Icves -Icves/targets/komodo-CP2A.260705.006 \
+            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
+            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
+            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
+            cves/cve-2026-43499-ghostlock/61/preload.c \
+            -o build/payloads/pixel9-series.so && echo "✅ pixel9-series OK" || echo "❌ FAILED"
 
-            "$NDK_CLANG" \
-              -shared -fPIC -O2 \
-              -DAPP_PAYLOAD=1 \
-              "-DTARGET_CONFIG_H=<targets/$TARGET/target.h>" \
-              -DPSELECT_ROUTE_NFDS=320 \
-              -DPSELECT_MAP_FIRST_WORD=2 \
-              -DPSELECT_MAP_LOCK_WORD=9 \
-              -DKNOB_PSELECT_SHIFT_MIN=-2 \
-              -DKNOB_PSELECT_SHIFT_MAX=6 \
-              -Icves/cve-2026-43499-ghostlock/61 \
-              -Icves/cve-2026-43499-ghostlock \
-              -Icves \
-              "-Icves/targets/$TARGET" \
-              cves/cve-2026-43499-ghostlock/61/main.c \
-              cves/cve-2026-43499-ghostlock/61/util.c \
-              cves/kaslr/slide_tracefs.c \
-              cves/cve-2026-43499-ghostlock/61/fops.c \
-              cves/cve-2026-43499-ghostlock/61/pipe.c \
-              cves/cve-2026-43499-ghostlock/61/root.c \
-              cves/cve-2026-43499-ghostlock/61/preload.c \
-              $WALLPAPER_OBJ \
-              -o build/payloads/${OUTNAME}.so \
-              && echo "  ✅ $OUTNAME.so OK" \
-              || echo "  ❌ $OUTNAME.so FAILED"
-          }
+          echo "=== Building pixel8a ==="
+          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
+            "-DTARGET_CONFIG_H=<targets/akita-CP2A.260805.005/target.h>" \
+            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
+            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
+            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
+            -Icves -Icves/targets/akita-CP2A.260805.005 \
+            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
+            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
+            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
+            cves/cve-2026-43499-ghostlock/61/preload.c \
+            -o build/payloads/pixel8a.so && echo "✅ pixel8a OK" || echo "❌ FAILED"
 
-          build_one pixel6-8-series  bluejay-CP2A.260705.006
-          build_one pixel9-series    komodo-CP2A.260705.006
-          build_one pixel8a          akita-CP2A.260805.005
-          build_one pixel6a-cp1a     bluejay-CP1A.260405.005
-          build_one pixel10-series   blazer-CP2A.260705.006
+          echo "=== Building pixel6a-cp1a ==="
+          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
+            "-DTARGET_CONFIG_H=<targets/bluejay-CP1A.260405.005/target.h>" \
+            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
+            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
+            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
+            -Icves -Icves/targets/bluejay-CP1A.260405.005 \
+            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
+            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
+            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
+            cves/cve-2026-43499-ghostlock/61/preload.c \
+            -o build/payloads/pixel6a-cp1a.so && echo "✅ pixel6a-cp1a OK" || echo "❌ FAILED"
 
+          echo "=== Building pixel10-series ==="
+          $NDK_CLANG -shared -fPIC -O2 -DAPP_PAYLOAD=1 \
+            "-DTARGET_CONFIG_H=<targets/blazer-CP2A.260705.006/target.h>" \
+            -DPSELECT_ROUTE_NFDS=320 -DPSELECT_MAP_FIRST_WORD=2 \
+            -DPSELECT_MAP_LOCK_WORD=9 -DKNOB_PSELECT_SHIFT_MIN=-2 -DKNOB_PSELECT_SHIFT_MAX=6 \
+            -Icves/cve-2026-43499-ghostlock/61 -Icves/cve-2026-43499-ghostlock \
+            -Icves -Icves/targets/blazer-CP2A.260705.006 \
+            cves/cve-2026-43499-ghostlock/61/main.c cves/cve-2026-43499-ghostlock/61/util.c \
+            cves/kaslr/slide_tracefs.c cves/cve-2026-43499-ghostlock/61/fops.c \
+            cves/cve-2026-43499-ghostlock/61/pipe.c cves/cve-2026-43499-ghostlock/61/root.c \
+            cves/cve-2026-43499-ghostlock/61/preload.c \
+            -o build/payloads/pixel10-series.so && echo "✅ pixel10-series OK" || echo "❌ FAILED"
+
+          echo "=== Results ==="
           ls -lh build/payloads/
 
       - name: Upload artifacts
