@@ -166,7 +166,7 @@ def assemble_wallpaper_blob(ndk_bin, clang):
     blob_s = f"{KSU_ROOT}/cves/wallpaper_blob.S"
     blob_o = f"{BUILD_DIR}/wallpaper.o"
 
-    # Try llvm-mc first, then fall back to clang -c
+    # Method 1: llvm-mc
     llvm_mc = os.path.join(ndk_bin, "llvm-mc")
     if os.path.isfile(llvm_mc):
         result = subprocess.run(
@@ -175,18 +175,44 @@ def assemble_wallpaper_blob(ndk_bin, clang):
             cwd=f"{KSU_ROOT}/cves",
             capture_output=True
         )
-    else:
-        # Fallback: use clang to assemble
-        result = subprocess.run(
-            [clang, "-c", blob_s, "-o", blob_o],
-            cwd=f"{KSU_ROOT}/cves",
-            capture_output=True
-        )
+        if result.returncode == 0 and os.path.exists(blob_o):
+            print(f"Wallpaper blob assembled via llvm-mc: {os.path.getsize(blob_o)} bytes")
+            return blob_o
+        print(f"llvm-mc failed: {result.stderr.decode()[:100]}")
 
+    # Method 2: clang -c (assemble .S file)
+    result = subprocess.run(
+        [clang, "-target", "aarch64-linux-android34",
+         "-c", os.path.abspath(blob_s),
+         "-o", blob_o],
+        cwd=f"{KSU_ROOT}/cves",
+        capture_output=True
+    )
     if result.returncode == 0 and os.path.exists(blob_o):
-        print(f"Wallpaper blob assembled: {os.path.getsize(blob_o)} bytes")
+        print(f"Wallpaper blob assembled via clang: {os.path.getsize(blob_o)} bytes")
         return blob_o
-    print(f"Wallpaper blob assembly failed: {result.stderr.decode()[:200]}")
+    print(f"clang assembly failed: {result.stderr.decode()[:200]}")
+
+    # Method 3: Use objcopy to create object from raw binary
+    wp_bin = f"{KSU_ROOT}/cves/assets/wallpaper.webp"
+    aarch64_objcopy = os.path.join(ndk_bin, "llvm-objcopy")
+    if not os.path.isfile(aarch64_objcopy):
+        aarch64_objcopy = "aarch64-linux-gnu-objcopy"
+    result = subprocess.run(
+        [aarch64_objcopy,
+         "--input-target=binary",
+         "--output-target=elf64-littleaarch64",
+         "--binary-architecture=aarch64",
+         "--redefine-sym", f"_binary_{os.path.basename(wp_bin).replace('.','_')}_start=embedded_wallpaper_start",
+         "--redefine-sym", f"_binary_{os.path.basename(wp_bin).replace('.','_')}_end=embedded_wallpaper_end",
+         "--redefine-sym", f"_binary_{os.path.basename(wp_bin).replace('.','_')}_size=embedded_wallpaper_size",
+         wp_bin, blob_o],
+        capture_output=True
+    )
+    if result.returncode == 0 and os.path.exists(blob_o):
+        print(f"Wallpaper blob created via objcopy: {os.path.getsize(blob_o)} bytes")
+        return blob_o
+    print(f"objcopy failed: {result.stderr.decode()[:200]}")
     return None
 
 def build_payload(clang, out_name, target, wp_obj=None):
