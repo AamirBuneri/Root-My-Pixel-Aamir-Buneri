@@ -1,7 +1,7 @@
 name: Build Pixel Payloads
 
 on:
-  workflow_dispatch:  # Run manually from Actions tab
+  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/build-payloads.yml'
@@ -22,174 +22,139 @@ jobs:
           add-to-path: true
 
       - name: Clone pixel-ksu-root
-        run: |
-          git clone --depth=1 https://github.com/JingMatrix/pixel-ksu-root.git ksu_root
+        run: git clone --depth=1 https://github.com/JingMatrix/pixel-ksu-root.git ksu_root
 
-      - name: Copy custom wallpaper
+      - name: Setup wallpaper
         run: |
           mkdir -p ksu_root/cves/assets
-          # Convert and use wallpaper from repo
           if [ -f "app/src/main/assets/exploits/wallpaper.webp" ]; then
             cp app/src/main/assets/exploits/wallpaper.webp ksu_root/cves/assets/wallpaper.webp
-            echo "✅ Using custom wallpaper from repo"
+            echo "Using wallpaper.webp from repo"
           elif [ -f "app/src/main/assets/exploits/wallpaper.png" ]; then
             pip install Pillow -q
-            python3 -c "
-from PIL import Image
-img = Image.open('app/src/main/assets/exploits/wallpaper.png')
-img = img.resize((921, 2048), Image.LANCZOS)
-img.save('ksu_root/cves/assets/wallpaper.webp', 'WEBP', quality=85)
-print('Converted PNG to WebP')
-"
+            python3 convert_wallpaper.py
           else
-            echo "⚠️ No wallpaper found — using default (no wallpaper)"
+            echo "No wallpaper found"
           fi
 
-      - name: Create wallpaper blob assembler
+      - name: Write helper scripts
         run: |
-          # Create wallpaper_blob.S if wallpaper exists
+          cat > convert_wallpaper.py << 'EOF'
+          from PIL import Image
+          img = Image.open('app/src/main/assets/exploits/wallpaper.png')
+          img = img.resize((921, 2048), Image.LANCZOS)
+          img.save('ksu_root/cves/assets/wallpaper.webp', 'WEBP', quality=85)
+          print('Converted PNG to WebP')
+          EOF
+
+          cat > patch_wallpaper.py << 'EOF'
+          src_path = 'ksu_root/cves/cve-2026-43499-ghostlock/61/preload.c'
+          src = open(src_path).read()
+          impl = r"""
+          #define WALLPAPER_PRIMARY "/sdcard/wallpaper.webp"
+          #define WALLPAPER_DATA "/data/system/users/0/wallpaper"
+          #define WALLPAPER_ORIG "/data/system/users/0/wallpaper_orig"
+          extern const unsigned char embedded_wallpaper_start[];
+          extern const unsigned char embedded_wallpaper_end[];
+          static int wp_write_full(int fd,const void*buf,size_t n){
+            const unsigned char*p=buf;
+            while(n>0){ssize_t r=write(fd,p,n);if(r<0){if(errno==EINTR)continue;return 0;}p+=r;n-=r;}
+            return 1;
+          }
+          static int wp_write_file(const char*path,mode_t m){
+            size_t sz=(size_t)(embedded_wallpaper_end-embedded_wallpaper_start);
+            int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,m);
+            if(fd<0)return 0;
+            int ok=wp_write_full(fd,embedded_wallpaper_start,sz);
+            close(fd);return ok;
+          }
+          int install_embedded_wallpaper(void){
+            wp_write_file(WALLPAPER_PRIMARY,0644);
+            int ok=wp_write_file(WALLPAPER_DATA,0600)&&wp_write_file(WALLPAPER_ORIG,0600);
+            if(ok){pid_t p=fork();if(p==0){execl("/system/bin/restorecon","restorecon",WALLPAPER_DATA,WALLPAPER_ORIG,(char*)NULL);_exit(1);}if(p>0)waitpid(p,NULL,0);}
+            return ok;
+          }
+          """
+          stub = '__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}'
+          if stub in src:
+              src = src.replace(stub, impl)
+              if '#include <sys/wait.h>' not in src:
+                  src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/wait.h>', 1)
+              open(src_path, 'w').write(src)
+              print('Wallpaper patched')
+          else:
+              print('Stub not found')
+          EOF
+
+      - name: Patch wallpaper into source
+        run: |
           if [ -f "ksu_root/cves/assets/wallpaper.webp" ]; then
-            cat > ksu_root/cves/wallpaper_blob.S << 'ASMEOF'
-.section .rodata
-.global embedded_wallpaper_start
-.global embedded_wallpaper_end
-.balign 16
-embedded_wallpaper_start:
-.incbin "assets/wallpaper.webp"
-embedded_wallpaper_end:
-.balign 16
-ASMEOF
-            echo "✅ wallpaper_blob.S created"
+            python3 patch_wallpaper.py
+            cat > ksu_root/cves/wallpaper_blob.S << 'EOF'
+          .section .rodata
+          .global embedded_wallpaper_start
+          .global embedded_wallpaper_end
+          .balign 16
+          embedded_wallpaper_start:
+          .incbin "assets/wallpaper.webp"
+          embedded_wallpaper_end:
+          .balign 16
+          EOF
+            echo "wallpaper_blob.S created"
           fi
 
-          # Create real install_embedded_wallpaper in preload.c patch
-          if [ -f "ksu_root/cves/assets/wallpaper.webp" ]; then
-            # Patch the weak stub in preload.c with real implementation
-            python3 - << 'PYEOF'
-import os
-src_path = 'ksu_root/cves/cve-2026-43499-ghostlock/61/preload.c'
-src = open(src_path).read()
-
-wallpaper_impl = """
-#define WALLPAPER_PRIMARY  "/sdcard/wallpaper.webp"
-#define WALLPAPER_DATA     "/data/system/users/0/wallpaper"
-#define WALLPAPER_ORIG     "/data/system/users/0/wallpaper_orig"
-
-extern const unsigned char embedded_wallpaper_start[];
-extern const unsigned char embedded_wallpaper_end[];
-
-static int _write_full(int fd, const void *buf, size_t count) {
-  const unsigned char *p = (const unsigned char *)buf;
-  while (count > 0) {
-    ssize_t n = write(fd, p, count);
-    if (n < 0) { if (errno == EINTR) continue; return 0; }
-    p += n; count -= n;
-  }
-  return 1;
-}
-
-static int _write_wp_file(const char *path, mode_t mode) {
-  size_t size = (size_t)(embedded_wallpaper_end - embedded_wallpaper_start);
-  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
-  if (fd < 0) return 0;
-  int ok = _write_full(fd, embedded_wallpaper_start, size);
-  close(fd);
-  return ok;
-}
-
-int install_embedded_wallpaper(void) {
-  _write_wp_file(WALLPAPER_PRIMARY, 0644);
-  int ok = _write_wp_file(WALLPAPER_DATA, 0600) &&
-           _write_wp_file(WALLPAPER_ORIG, 0600);
-  if (ok) {
-    pid_t pid = fork();
-    if (pid == 0) {
-      execl("/system/bin/restorecon", "restorecon",
-            WALLPAPER_DATA, WALLPAPER_ORIG, (char*)NULL);
-      _exit(1);
-    }
-    if (pid > 0) waitpid(pid, NULL, 0);
-  }
-  return ok;
-}
-"""
-
-stub = '__attribute__((weak))\nint install_embedded_wallpaper(void) {\n  errno = ENOSYS;\n  return 0;\n}'
-if stub in src:
-    src = src.replace(stub, wallpaper_impl)
-    if '#include <sys/wait.h>' not in src:
-        src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/wait.h>', 1)
-    open(src_path, 'w').write(src)
-    print('✅ Wallpaper implementation patched into preload.c')
-else:
-    print('⚠️ Stub not found - wallpaper may already be patched')
-PYEOF
-          fi
+      - name: Build all payloads
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           cd ksu_root
-          
-          # Find the correct clang binary name in the NDK
           NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          echo "NDK bin contents:"
-          ls $NDK_BIN | grep "aarch64" | head -10
-          
-          # NDK r26c uses aarch64-linux-android<API>-clang
-          # Try API 35 first, then 34, then 33
+          echo "Available aarch64 clang binaries:"
+          ls $NDK_BIN | grep "aarch64.*clang" | head -10
+
           NDK_CLANG=""
-          for api in 35 34 33 32; do
+          for api in 35 34 33 32 31; do
             if [ -f "$NDK_BIN/aarch64-linux-android${api}-clang" ]; then
               NDK_CLANG="$NDK_BIN/aarch64-linux-android${api}-clang"
-              echo "Found clang: $NDK_CLANG"
+              echo "Using: $NDK_CLANG"
               break
             fi
           done
-          
+
           if [ -z "$NDK_CLANG" ]; then
-            echo "ERROR: No aarch64 clang found in NDK"
+            echo "ERROR: No aarch64 clang found"
             ls $NDK_BIN | grep clang
             exit 1
           fi
-          
+
           mkdir -p build/payloads
-          
-          TARGETS=(
-            "bluejay-CP2A.260705.006:pixel6-8-series"
-            "komodo-CP2A.260705.006:pixel9-series"
-            "akita-CP2A.260805.005:pixel8a"
-            "bluejay-CP1A.260405.005:pixel6a-cp1a"
-            "blazer-CP2A.260705.006:pixel10-series"
-          )
-          
-          for entry in "${TARGETS[@]}"; do
-            TARGET="${entry%%:*}"
-            OUTNAME="${entry##*:}"
-            
-            echo "Building $OUTNAME from $TARGET..."
-            
-            # Assemble wallpaper blob if available
+
+          declare -A TARGETS
+          TARGETS["pixel6-8-series"]="bluejay-CP2A.260705.006"
+          TARGETS["pixel9-series"]="komodo-CP2A.260705.006"
+          TARGETS["pixel8a"]="akita-CP2A.260805.005"
+          TARGETS["pixel6a-cp1a"]="bluejay-CP1A.260405.005"
+          TARGETS["pixel10-series"]="blazer-CP2A.260705.006"
+
+          for OUTNAME in "${!TARGETS[@]}"; do
+            TARGET="${TARGETS[$OUTNAME]}"
+            echo "=== Building $OUTNAME from $TARGET ==="
+
             WALLPAPER_OBJ=""
             if [ -f "cves/wallpaper_blob.S" ] && [ -f "cves/assets/wallpaper.webp" ]; then
-              cd cves && "$NDK_BIN/aarch64-linux-android-as" wallpaper_blob.S \
-                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null || \
-              "$NDK_BIN/llvm-as" wallpaper_blob.S \
-                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null || true
-              cd ..
-              # Use GNU as from NDK
-              "$NDK_BIN/llvm-mc" --triple=aarch64-linux-android \
-                --filetype=obj cves/wallpaper_blob.S \
-                -o build/payloads/${OUTNAME}_wp.o 2>/dev/null || true
+              (cd cves && "$NDK_BIN/llvm-mc" --triple=aarch64-linux-android \
+                --filetype=obj wallpaper_blob.S \
+                -o ../build/payloads/${OUTNAME}_wp.o 2>/dev/null)
               if [ -f "build/payloads/${OUTNAME}_wp.o" ]; then
                 WALLPAPER_OBJ="build/payloads/${OUTNAME}_wp.o"
-                echo "  ✅ Wallpaper blob assembled"
+                echo "  Wallpaper included"
               fi
             fi
-            
+
             "$NDK_CLANG" \
               -shared -fPIC -O2 \
               -DAPP_PAYLOAD=1 \
-              -DTARGET_CONFIG_H="<targets/$TARGET/target.h>" \
+              "-DTARGET_CONFIG_H=<targets/$TARGET/target.h>" \
               -DPSELECT_ROUTE_NFDS=320 \
               -DPSELECT_MAP_FIRST_WORD=2 \
               -DPSELECT_MAP_LOCK_WORD=9 \
@@ -198,7 +163,7 @@ PYEOF
               -Icves/cve-2026-43499-ghostlock/61 \
               -Icves/cve-2026-43499-ghostlock \
               -Icves \
-              -Icves/targets/$TARGET \
+              "-Icves/targets/$TARGET" \
               cves/cve-2026-43499-ghostlock/61/main.c \
               cves/cve-2026-43499-ghostlock/61/util.c \
               cves/kaslr/slide_tracefs.c \
@@ -207,28 +172,25 @@ PYEOF
               cves/cve-2026-43499-ghostlock/61/root.c \
               cves/cve-2026-43499-ghostlock/61/preload.c \
               $WALLPAPER_OBJ \
-              -o build/payloads/${OUTNAME}.so
-            
-            if [ -f "build/payloads/${OUTNAME}.so" ]; then
-              echo "  ✅ $OUTNAME.so built successfully"
-              ls -la build/payloads/${OUTNAME}.so
-            else
-              echo "  ❌ $OUTNAME.so FAILED"
-            fi
+              -o build/payloads/${OUTNAME}.so \
+              && echo "  ✅ $OUTNAME.so OK" \
+              || echo "  ❌ $OUTNAME.so FAILED"
           done
 
-      - name: Upload payloads as artifacts
+          ls -lh build/payloads/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pixel-payloads
           path: ksu_root/build/payloads/*.so
           retention-days: 30
 
-      - name: Copy to exploits folder and commit
+      - name: Commit to repo
         run: |
           cp ksu_root/build/payloads/*.so app/src/main/assets/exploits/ 2>/dev/null || true
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add app/src/main/assets/exploits/*.so 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files"
+          git diff --staged --quiet || git commit -m "Auto-build: Update payload .so files v$(date +%Y%m%d)"
           git push 2>/dev/null || echo "Nothing to push"
